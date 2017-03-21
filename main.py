@@ -23,9 +23,14 @@ for f in listdir(train_images_path):
         img = cv2.imread(filename, 0)
 
         # apply gaussian blur to remove random dots
-        blurred_img = cv2.GaussianBlur(img,(3,3),0)
+        blurred_img = cv2.GaussianBlur(img,(7,7),0)
+
+
         # THRESH_OTSU determines the best threshold value based on the image histogram then uses this threshold
-        ret, threshold_img = cv2.threshold(blurred_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        #ret, threshold_img = cv2.threshold(blurred_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # local threshold
+        threshold_img = cv2.adaptiveThreshold(blurred_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY, 11, 2)
 
         # print the used threshold value (if pixel < ret: pixel is set to 0 else: 255)
         inverted_img = cv2.bitwise_not(threshold_img)
@@ -35,10 +40,8 @@ for f in listdir(train_images_path):
         adding = cv2.add(canny,inverted_img)
         #print the width and the lenght
        # print inverted_img.shape
-
         #crop the picture 
        # cropped = inverted_img[720:1450, 100:1240]
-     
 
         # save the images
         result_filename = join(train_result_path, f)
