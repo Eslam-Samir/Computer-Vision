@@ -1,14 +1,17 @@
-from os import listdir, makedirs
-from os.path import isfile, join, exists
+import re
+import math
+import csv
 import imutils
 import cv2
-from imutils.perspective import four_point_transform
 import matplotlib.pyplot as plt
+from os import listdir, makedirs
+from os.path import isfile, join, exists
+from imutils.perspective import four_point_transform
 
 
 def question_number(y_value, column):
     row = 1
-    while y_value > 30:
+    while y_value > 45:
         y_value -= 40
         row += 1
     return row + (15 * column)
@@ -25,6 +28,17 @@ def answer(x_value):
         return 'D'
 
 
+def convert(text):
+    if text.isdigit():
+        return int(text)
+    else:
+        return text.lower()
+
+
+def natural_sort(l):
+    return sorted(l, key=(lambda key: [convert(c) for c in re.split('([0-9]+)', key)]))
+
+
 correct_answers = {1:  'B', 2:  'C', 3:  'A', 4:  'A', 5:  'D', 6:  'A', 7:  'C', 8:  'C', 9:  'A', 10: 'C', 11: 'A',
                    12: 'B', 13: 'C', 14: 'C', 15: 'B', 16: 'A', 17: 'D', 18: 'B', 19: 'C', 20: 'B', 21: 'D', 22: 'C',
                    23: 'D', 24: 'B', 25: 'D', 26: 'C', 27: 'D', 28: 'D', 29: 'B', 30: 'C', 31: 'B', 32: 'B', 33: 'D',
@@ -32,17 +46,19 @@ correct_answers = {1:  'B', 2:  'C', 3:  'A', 4:  'A', 5:  'D', 6:  'A', 7:  'C'
                    45: 'B'}
 
 
-train_images_path = '../train'
+train_images_path = '../train1'
 test_images_path = '../test'
-
-train_result_path = '../train_result'
-cropped_path = '../cropped'
+train_result_path = '../train_result1'
 
 if not exists(train_result_path):
     makedirs(train_result_path)
 
+data = [['FileName', 'Mark']]
+
+lst = listdir(train_images_path)
+lst = natural_sort(lst)
 # loop through all of the files in the directory
-for f in listdir(train_images_path):
+for f in lst:
     # the total path of the current file name
     filename = join(train_images_path, f)
     # check if it's a file
@@ -51,80 +67,90 @@ for f in listdir(train_images_path):
       
         # read the image file
         img = cv2.imread(filename, 0)
-
+        rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
         # apply gaussian blur to remove random dots
-
-        # THRESH_OTSU determines the best threshold value based on the image histogram then uses this threshold
-        # ret, threshold_img = cv2.threshold(blurred_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        # gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(img, (5, 5), 0)
-        edged = cv2.Canny(blurred, 130, 300)
+        edged = cv2.Canny(blurred, 130, 280)
+        cs = cv2.HoughCircles(edged, cv2.HOUGH_GRADIENT, 1, 200, param1=100, param2=10,
+                                   minRadius=40, maxRadius=50)
+        xs = []
+        ys = []
+        if cs is not None:
+            for x, y, r in cs[0]:
+                if y > 1400:
+                    xs.append(x)
+                    ys.append(y)
 
-        cnts = cv2.findContours(edged.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cnts = cnts[0] if imutils.is_cv2() else cnts[1]
+        y_diff = ys[0] - ys[1]
+        x_diff = xs[0] - xs[1]
+        theta = math.atan(y_diff / x_diff) * 180 / math.pi
 
-        # ensure that at least one contour was found
-        if len(cnts) > 0:
-            # sort the contours according to their size in
-            # descending order
-            cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
-            rect = None
-            # loop over the sorted contours
-            for c in cnts:
-                # approximate the contour
-                (x, y, w, h) = cv2.boundingRect(c)
-                # print (x, y, w, h)
-                peri = cv2.arcLength(c, True)
-                approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-                # if our approximated contour has four points,
-                # then we can assume we have found the paper
-                if len(approx) == 4 and w >= 900 and h >= 500:
-                    max_width = w
-                    max_height = h
-                    rect = approx
-                    break
+        rows, cols = img.shape
+        M = cv2.getRotationMatrix2D((cols / 2, rows / 2), theta, 1)
+        rotated_edged = cv2.warpAffine(edged, M, (cols, rows))
+        rotated_image = cv2.warpAffine(rgb, M, (cols, rows))
 
-            if rect is not None:
-                paper = four_point_transform(edged, rect.reshape(4, 2))
-                image = four_point_transform(img, rect.reshape(4, 2))
-                backtorgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        cs = cv2.HoughCircles(rotated_edged, cv2.HOUGH_GRADIENT, 1, 200, param1=100, param2=10,
+                              minRadius=40, maxRadius=50)
+        xs = []
+        ys = []
+        if cs is not None:
+            for x, y, r in cs[0]:
+                if y > 1400:
+                    xs.append(x)
+                    ys.append(y)
 
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (20, 20))
-                closing = cv2.morphologyEx(paper, cv2.MORPH_CLOSE, kernel)
+        if xs[0] > xs[1]:
+            xs[0], xs[1] = xs[1], xs[0]
+            ys[0], ys[1] = ys[1], ys[0]
 
-                kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-                erosion = cv2.erode(closing, kernel2, iterations=1)
+        x1 = xs[0] - 110
+        x2 = xs[1] + 110
+        y1 = ys[0] - 820
+        y2 = ys[0] - 120
 
-                questions_cols = [erosion[70:665, 90:270],
-                                  erosion[70:665, 418:598],
-                                  erosion[70:665, 745:925]]
+        cropped = rotated_image[y1:y2, x1:x2]
+        cropped_edged = rotated_edged[y1:y2, x1:x2]
 
-                answers = {}
-                score = 0
-                for i in range(len(questions_cols)):
-                    circles = cv2.HoughCircles(questions_cols[i], cv2.HOUGH_GRADIENT, 1, 20, param1=100, param2=10,
-                                               minRadius=2, maxRadius=20)
-                    if circles is not None:
-                        for x, y, r in circles[0]:
-                            question = question_number(y, i)
-                            # if a question appeared more than once remove it's mark
-                            # (2 choices are picked for the same question)
-                            # print x, y, r
-                            if question not in answers:
-                                answers[question] = answer(x)
-                                if answers[question] == correct_answers[question]:
-                                    score += 1
-                            else:
-                                score -= 1
-                            cv2.circle(backtorgb, (int(x + 90 + 330*i), int(y) + 70), r, (0, 0, 255), -1)
-                # fig, ax = plt.subplots()
-                # im = ax.imshow(backtorgb[70:665, :], interpolation='none')
-                # plt.show()
-                # cv2.imshow('image',backtorgb)
-                # save the images
-                print answers
-                print score
-                result_filename = join(train_result_path, f)
-                cv2.imwrite(result_filename, backtorgb)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (20, 20))
+        closing = cv2.morphologyEx(cropped_edged, cv2.MORPH_CLOSE, kernel)
 
-cv2.waitKey(0)
+        kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        erosion = cv2.erode(closing, kernel2, iterations=1)
+
+        questions_cols = [erosion[50:665, 90:270],
+                          erosion[50:665, 418:598],
+                          erosion[50:665, 745:925]]
+
+        answers = {}
+        score = 0
+        for i in range(len(questions_cols)):
+            circles = cv2.HoughCircles(questions_cols[i], cv2.HOUGH_GRADIENT, 1, 20, param1=100, param2=10,
+                                       minRadius=2, maxRadius=20)
+            if circles is not None:
+                for x, y, r in circles[0]:
+                    question = question_number(y, i)
+                    # if a question appeared more than once remove it's mark
+                    # (2 choices are picked for the same question)
+                    # print x, y, r
+                    if question not in answers:
+                        answers[question] = answer(x)
+                        if answers[question] == correct_answers[question]:
+                            score += 1
+                    else:
+                        score -= 1
+                    cv2.circle(cropped, (int(x + 90 + 330*i), int(y) + 50), r, (0, 0, 255), -1)
+        #fig, ax = plt.subplots()
+        #im = ax.imshow(cropped[50:665, 745:925], interpolation='none')
+        #plt.show()
+        # cv2.imshow('image', paper)
+        # save the images
+        print answers
+        print score
+        data.append([f, score])
+        result_filename = join(train_result_path, f)
+        cv2.imwrite(result_filename, cropped)
+
+with open('submission.csv', 'wb') as fp:
+    a = csv.writer(fp, delimiter=',')
+    a.writerows(data)
