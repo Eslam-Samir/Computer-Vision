@@ -46,9 +46,9 @@ correct_answers = {1:  'B', 2:  'C', 3:  'A', 4:  'A', 5:  'D', 6:  'A', 7:  'C'
                    45: 'B'}
 
 
-train_images_path = '../train1'
+train_images_path = '../train'
 test_images_path = '../test'
-train_result_path = '../train_result1'
+train_result_path = '../train_result'
 
 if not exists(train_result_path):
     makedirs(train_result_path)
