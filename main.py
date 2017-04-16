@@ -113,9 +113,10 @@ for f in lst:
             for c in cnts:
                 (x, y, w, h) = cv2.boundingRect(c)
                 circle_ratio = w / float(h)
-                if w >= 18 and h >= 18 and 0.4 <= circle_ratio <= 1.5:
+                if w >= 18 and h >= 18 and 0.4 <= circle_ratio <= 1.7:
                     cv2.drawContours(rgb[:, i*328:180+i*328], c, -1, (255, 0, 0), 1)
                     questionCnts.append(c)
+
             if len(questionCnts) > 60:
                 j = 0
                 while j < len(questionCnts):
@@ -125,7 +126,6 @@ for f in lst:
                         del questionCnts[j]
                     else:
                         j += 1
-
             questionCnts = contours.sort_contours(questionCnts, method="top-to-bottom")[0]
             number = 1
             for j in range(0, len(questionCnts), 4):
