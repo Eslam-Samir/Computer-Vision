@@ -7,6 +7,7 @@ import numpy as np
 from imutils import contours
 from os import listdir, makedirs
 from os.path import isfile, join, exists
+#from data import testdata, traindata
 
 
 def question_number(row, column):
@@ -32,10 +33,10 @@ correct_answers = {1:  'B', 2:  'C', 3:  'A', 4:  'A', 5:  'D', 6:  'A', 7:  'C'
 
 options = ['A', 'B', 'C', 'D']
 
-threshold = 220
+threshold = 190
 
-train_images_path = '../test'
-train_result_path = '../test_result'
+train_images_path = '../train'
+train_result_path = '../train_result'
 
 if not exists(train_result_path):
     makedirs(train_result_path)
@@ -44,6 +45,9 @@ data = [['FileName', 'Mark']]
 
 lst = listdir(train_images_path)
 lst = natural_sort(lst)
+
+wrong = {}
+
 # loop through all of the files in the directory
 for f in lst:
     # the total path of the current file name
@@ -55,7 +59,7 @@ for f in lst:
         # read the image file
         img = cv2.imread(filename, 0)
         cs = cv2.HoughCircles(img, cv2.HOUGH_GRADIENT, 1, 200, param1=100, param2=10,
-                                   minRadius=40, maxRadius=50)
+                              minRadius=40, maxRadius=50)
         xs = []
         ys = []
         if cs is not None:
@@ -92,11 +96,20 @@ for f in lst:
         y2 = ys[0] - 150
 
         cropped = rotated_image[y1:y2, x1:x2]
+
         rgb = cv2.cvtColor(cropped, cv2.COLOR_GRAY2RGB)
 
         # apply gaussian blur to remove random dots
         blurred = cv2.GaussianBlur(cropped, (5, 5), 0)
         thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+        #th, thresh = cv2.threshold(cropped, 127, 255, cv2.THRESH_OTSU + cv2.THRESH_BINARY_INV)
+        #edges = cv2.Canny(cropped, th / 2, th)
+
+        #thresh = thresh+edges
+        #kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        #thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        #kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 1))
+        #thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
 
         questions_cols = [thresh[:, 0:180],
                           thresh[:, 328:508],
@@ -113,7 +126,7 @@ for f in lst:
             for c in cnts:
                 (x, y, w, h) = cv2.boundingRect(c)
                 circle_ratio = w / float(h)
-                if w >= 18 and h >= 18 and 0.4 <= circle_ratio <= 1.7:
+                if w >= 18 and h >= 18 and 0.4 <= circle_ratio <= 1.9:
                     cv2.drawContours(rgb[:, i*328:180+i*328], c, -1, (255, 0, 0), 1)
                     questionCnts.append(c)
 
@@ -127,21 +140,38 @@ for f in lst:
                     else:
                         j += 1
             questionCnts = contours.sort_contours(questionCnts, method="top-to-bottom")[0]
+            result_filename = join(train_result_path, f)
+            cv2.imwrite(result_filename, rgb)
+
             number = 1
-            for j in range(0, len(questionCnts), 4):
+            j = 0
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+            while j < len(questionCnts):
                 choices = contours.sort_contours(questionCnts[j:j + 4])[0]
                 bubbled = None
                 multi_bubbles = False
-
+                (x_val, y_val, w_val, h_val) = cv2.boundingRect(choices[0])
                 question_no = question_number(number, i)
-
                 for choice, c in enumerate(choices):
+                    (x, y, w, h) = cv2.boundingRect(c)
+                    if y - y_val > 10:
+                        j -= (3 - choice)
+                        if bubbled[0] < 300:
+                            bubbled = (300, options[choice])
+                        break
                     mask = np.zeros(questions_cols[i].shape, dtype="uint8")
+                    #m = mask.copy()
                     cv2.drawContours(mask, [c], -1, 255, -1)
+                    #cv2.rectangle(m, (x - 5, y - 5), (x + 25, y + 25), 255, -1)
+                    #mask = cv2.bitwise_and(questions_cols[i], questions_cols[i], mask=m)
 
+                    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
                     mask = cv2.bitwise_and(questions_cols[i], questions_cols[i], mask=mask)
+                    #if f == "S_1_hppscan130.png":
+                    #    result_filename = join(train_result_path, "N" + str(i) + "Q" + str(number) + "C" + str(choice) + f)
+                    #    cv2.imwrite(result_filename, mask)
+
                     total = cv2.countNonZero(mask)
-                    # print (question_no, total, options[choice])
                     if bubbled is not None and 270 < bubbled[0] and 270 < total:
                         multi_bubbles = True
                     if bubbled is None or total > bubbled[0]:
@@ -151,13 +181,15 @@ for f in lst:
                     answers[question_no] = bubbled[1]
                     if bubbled[1] == correct_answers[question_no]:
                         score += 1
-
+                j += 4
                 number += 1
-        # print answers
+        print answers
         print score
         data.append([f, score])
-        result_filename = join(train_result_path, f)
-        cv2.imwrite(result_filename, rgb)
+        #if score != traindata[f]:
+        #    wrong[f] = traindata[f] - score
+print wrong
+print len(wrong)
 
 with open('submission.csv', 'wb') as fp:
     a = csv.writer(fp, delimiter=',')
