@@ -7,7 +7,7 @@ import numpy as np
 from imutils import contours
 from os import listdir, makedirs
 from os.path import isfile, join, exists
-#from data import testdata, traindata
+from data import traindata
 
 
 def question_number(row, column):
@@ -102,15 +102,6 @@ for f in lst:
         # apply gaussian blur to remove random dots
         blurred = cv2.GaussianBlur(cropped, (5, 5), 0)
         thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-        #th, thresh = cv2.threshold(cropped, 127, 255, cv2.THRESH_OTSU + cv2.THRESH_BINARY_INV)
-        #edges = cv2.Canny(cropped, th / 2, th)
-
-        #thresh = thresh+edges
-        #kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        #thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
-        #kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 1))
-        #thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-
         questions_cols = [thresh[:, 0:180],
                           thresh[:, 328:508],
                           thresh[:, 656:836]]
@@ -127,7 +118,6 @@ for f in lst:
                 (x, y, w, h) = cv2.boundingRect(c)
                 circle_ratio = w / float(h)
                 if w >= 18 and h >= 18 and 0.4 <= circle_ratio <= 1.9:
-                    cv2.drawContours(rgb[:, i*328:180+i*328], c, -1, (255, 0, 0), 1)
                     questionCnts.append(c)
 
             if len(questionCnts) > 60:
@@ -135,62 +125,82 @@ for f in lst:
                 while j < len(questionCnts):
                     (x, y, w, h) = cv2.boundingRect(questionCnts[j])
                     circle_ratio = w / float(h)
-                    if not (w >= 20 and h >= 20 and (0.8 <= circle_ratio <= 1.2)):
+                    if not (w >= 20 and h >= 20 and (0.9 <= circle_ratio <= 1.2)):
                         del questionCnts[j]
                     else:
                         j += 1
-            questionCnts = contours.sort_contours(questionCnts, method="top-to-bottom")[0]
+            cv2.drawContours(rgb[:, i * 328:180 + i * 328], questionCnts, -1, (255, 0, 0), 1)
+            questionCnts = list(contours.sort_contours(questionCnts, method="top-to-bottom")[0])
+
             result_filename = join(train_result_path, f)
             cv2.imwrite(result_filename, rgb)
 
             number = 1
             j = 0
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+
             while j < len(questionCnts):
-                choices = contours.sort_contours(questionCnts[j:j + 4])[0]
+                n = 1
+                (x_val, y_val, w_val, h_val) = cv2.boundingRect(questionCnts[j])
+                for q in questionCnts[j+1:]:
+                    (x, y, w, h) = cv2.boundingRect(q)
+                    if abs(y - y_val) > 20:
+                        break
+                    n += 1
+
+                choices = contours.sort_contours(questionCnts[j:j+n])[0]
+                (x_val, y_val, w_val, h_val) = cv2.boundingRect(choices[0])
                 bubbled = None
                 multi_bubbles = False
-                (x_val, y_val, w_val, h_val) = cv2.boundingRect(choices[0])
                 question_no = question_number(number, i)
-                for choice, c in enumerate(choices):
-                    (x, y, w, h) = cv2.boundingRect(c)
-                    if y - y_val > 10:
-                        j -= (3 - choice)
-                        if bubbled[0] < 300:
-                            bubbled = (300, options[choice])
-                        break
+                x_prev = x_val
+
+                m = 0
+                for n in range(4):
+                    (x, y, w, h) = cv2.boundingRect(choices[m])
                     mask = np.zeros(questions_cols[i].shape, dtype="uint8")
-                    #m = mask.copy()
-                    cv2.drawContours(mask, [c], -1, 255, -1)
-                    #cv2.rectangle(m, (x - 5, y - 5), (x + 25, y + 25), 255, -1)
-                    #mask = cv2.bitwise_and(questions_cols[i], questions_cols[i], mask=m)
+                    if n == 0 and x_val > 40:
+                        cv2.rectangle(mask, (x_prev - 40, y_val - 2), (x_prev - 15, y_val + 22), 255, -1)
+                    elif n >= len(choices) or x - x_prev > 60:
+                        cv2.rectangle(mask, (x_prev + 40, y_val - 2), (x_prev + 65, y_val + 22), 255, -1)
+                        x_prev += 40
+                    else:
+                        cv2.drawContours(mask, [choices[m]], -1, 255, -1)
+                        x_prev = x
+                        m += 1
+                        if m == len(choices):
+                            m -= 1
 
                     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
                     mask = cv2.bitwise_and(questions_cols[i], questions_cols[i], mask=mask)
-                    #if f == "S_1_hppscan130.png":
-                    #    result_filename = join(train_result_path, "N" + str(i) + "Q" + str(number) + "C" + str(choice) + f)
+
+                    # if f == "S_22_hppscan112.png" and question_no == 21:
+                    #    result_filename = join(train_result_path,
+                    #                           "N" + str(i) + "Q" + str(question_no) + "C" + str(n) + f)
                     #    cv2.imwrite(result_filename, mask)
 
                     total = cv2.countNonZero(mask)
                     if bubbled is not None and 270 < bubbled[0] and 270 < total:
                         multi_bubbles = True
                     if bubbled is None or total > bubbled[0]:
-                        bubbled = (total, options[choice])
+                        bubbled = (total, options[n])
 
                 if bubbled[0] > threshold and multi_bubbles is False:
                     answers[question_no] = bubbled[1]
                     if bubbled[1] == correct_answers[question_no]:
                         score += 1
-                j += 4
+                j += len(choices)
                 number += 1
+
         print answers
         print score
         data.append([f, score])
-        #if score != traindata[f]:
-        #    wrong[f] = traindata[f] - score
+        if f in traindata and score != traindata[f]:
+            wrong[f] = traindata[f] - score
+
 print wrong
 print len(wrong)
 
-with open('submission.csv', 'wb') as fp:
+with open('train.csv', 'wb') as fp:
     a = csv.writer(fp, delimiter=',')
     a.writerows(data)
