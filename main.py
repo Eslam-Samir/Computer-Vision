@@ -7,22 +7,11 @@ import numpy as np
 from imutils import contours
 from os import listdir, makedirs
 from os.path import isfile, join, exists
-from data import traindata
+from data import testdata, traindata
 
 
 def question_number(row, column):
     return row + (15 * column)
-
-
-def convert(text):
-    if text.isdigit():
-        return int(text)
-    else:
-        return text.lower()
-
-
-def natural_sort(l):
-    return sorted(l, key=(lambda key: [convert(c) for c in re.split('([0-9]+)', key)]))
 
 
 correct_answers = {1:  'B', 2:  'C', 3:  'A', 4:  'A', 5:  'D', 6:  'A', 7:  'C', 8:  'C', 9:  'A', 10: 'C', 11: 'A',
@@ -35,8 +24,8 @@ options = ['A', 'B', 'C', 'D']
 
 threshold = 190
 
-train_images_path = '../train'
-train_result_path = '../train_result'
+train_images_path = '../train1'
+train_result_path = '../train_result1'
 
 if not exists(train_result_path):
     makedirs(train_result_path)
@@ -44,7 +33,6 @@ if not exists(train_result_path):
 data = [['FileName', 'Mark']]
 
 lst = listdir(train_images_path)
-lst = natural_sort(lst)
 
 wrong = {}
 
@@ -58,15 +46,22 @@ for f in lst:
       
         # read the image file
         img = cv2.imread(filename, 0)
+        RGB = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
         cs = cv2.HoughCircles(img, cv2.HOUGH_GRADIENT, 1, 200, param1=100, param2=10,
                               minRadius=40, maxRadius=50)
+
         xs = []
         ys = []
         if cs is not None:
             for x, y, r in cs[0]:
                 if y > 1400:
+                    # print x,y,r
+                    cv2.circle(RGB, (x, y), r, (255, 0, 0), -1)
                     xs.append(x)
                     ys.append(y)
+
+        result_filename = join(train_result_path, "step1_Hough_" + f)
+        cv2.imwrite(result_filename, RGB)
 
         y_diff = ys[0] - ys[1]
         x_diff = xs[0] - xs[1]
@@ -78,13 +73,20 @@ for f in lst:
 
         cs = cv2.HoughCircles(rotated_image, cv2.HOUGH_GRADIENT, 1, 200, param1=100, param2=10,
                               minRadius=40, maxRadius=50)
+        RGB = cv2.cvtColor(rotated_image, cv2.COLOR_GRAY2RGB)
+
         xs = []
         ys = []
         if cs is not None:
             for x, y, r in cs[0]:
                 if y > 1400:
+                    # print x,y,r
+                    cv2.circle(RGB, (x, y), r, (255, 0, 0), -1)
                     xs.append(x)
                     ys.append(y)
+
+        result_filename = join(train_result_path, "step2_rotated_" + f)
+        cv2.imwrite(result_filename, RGB)
 
         if xs[0] > xs[1]:
             xs[0], xs[1] = xs[1], xs[0]
@@ -96,6 +98,9 @@ for f in lst:
         y2 = ys[0] - 150
 
         cropped = rotated_image[y1:y2, x1:x2]
+
+        result_filename = join(train_result_path, "step3_cropped_rotated_" + f)
+        cv2.imwrite(result_filename, cropped)
 
         rgb = cv2.cvtColor(cropped, cv2.COLOR_GRAY2RGB)
 
@@ -109,6 +114,8 @@ for f in lst:
         score = 0
         answers = {}
         for i in range(len(questions_cols)):
+            result_filename = join(train_result_path, "Col" + str(i) + "_" + f)
+            cv2.imwrite(result_filename, questions_cols[i])
             cnts = cv2.findContours(questions_cols[i], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             cnts = cnts[0] if imutils.is_cv2() else cnts[1]
             questionCnts = []
@@ -173,13 +180,12 @@ for f in lst:
 
                     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
                     mask = cv2.bitwise_and(questions_cols[i], questions_cols[i], mask=mask)
-
-                    # if f == "S_22_hppscan112.png" and question_no == 21:
-                    #    result_filename = join(train_result_path,
-                    #                           "N" + str(i) + "Q" + str(question_no) + "C" + str(n) + f)
-                    #    cv2.imwrite(result_filename, mask)
-
                     total = cv2.countNonZero(mask)
+
+                    # if question_no == 1:
+                    result_filename = join(train_result_path, "Q" + str(question_no) + "C" + str(n) + "_" + f)
+                    cv2.imwrite(result_filename, mask)
+
                     if bubbled is not None and 270 < bubbled[0] and 270 < total:
                         multi_bubbles = True
                     if bubbled is None or total > bubbled[0]:
@@ -197,10 +203,11 @@ for f in lst:
         data.append([f, score])
         if f in traindata and score != traindata[f]:
             wrong[f] = traindata[f] - score
-
+        elif f in testdata and score != testdata[f]:
+            wrong[f] = testdata[f] - score
 print wrong
 print len(wrong)
 
-with open('train.csv', 'wb') as fp:
+with open('sub.csv', 'wb') as fp:
     a = csv.writer(fp, delimiter=',')
     a.writerows(data)
